@@ -68,7 +68,7 @@ report id 0x00 + 90 字节负载
 | --- | --- | --- |
 | 固件版本 | `0x00/0x81` | args = `[major, minor]` → **v2.01** |
 | 序列号 | `0x00/0x82` | 22 字节 ASCII → `PM2527H27802009` |
-| 版本/配色 | `0x00/0x86` | `args = [layoutId, editionId]`；`0x00` 黑、`0x80` 白 |
+| 版本/配色 | `0x00/0x86` | `args = [layoutId, editionId]`；`0x00` 黑、`0x80` 白（见 [4.3](#43-配色识别颜色是设备自己上报的)） |
 | 连接模式 | `0x00/0x84` | `args[0]`；`0x03` = 2.4G，但休眠时会漂成 `0x00`，所以连接方式以 PID 为准 |
 | 轮询率 | `0x00/0x85` 读、`0x00/0x05` 写 | 1/2/4/8/16/32/64 ↔ 1000/500/250/125/2000/4000/8000 Hz |
 | DPI | `0x04/0x85` 读、`0x04/0x05` 写 | args 7 字节：`[00][xHi][xLo][yHi][yLo][00][00]` |
@@ -173,6 +173,41 @@ razer-driver/
 当无线鼠标休眠、命令全部超时时，界面显示「休眠中 · 移动鼠标唤醒」，数值降级为 `—`，并保留上一次有效读数的本地缓存。
 而不是把 0 当成真实读数：
 
+
+### 4.3 配色识别：颜色是设备自己上报的
+
+黑白两种配色在 Windows 里的产品名、VID/PID **完全一样**（本机白色版读出来也是
+`Razer DeathAdder V3 Pro` / `1532:00B7`），所以官方没法靠字符串判断颜色，它读的是设备里的一条字段：
+
+```powershell
+rzctl raw 00 86 0000 2
+# status=成功  args=[00, 80]      ← args[0] = layoutId, args[1] = editionId = 128
+```
+
+`Edition Information`（`0x00/0x86`，2 字节）返回 `[layoutId, editionId]`：
+
+| editionId | 配色 |
+| --- | --- |
+| `0x00` (0) | 黑色 |
+| `0x80` (128) | 白色（本机实测） |
+
+Synapse 自己的日志里能直接对上（`%LOCALAPPDATA%\Razer\RazerAppEngine\User Data\Logs`）：
+
+```json
+{"serialNumber":"PM2527H27802009","editionId":128,"layoutId":0,"activeProfile":"5349ed08-..."}
+```
+
+它还用这个值做另外两件事：
+
+* **多设备状态帧**每台设备 4 字节：`[isConnect, pid_hi, pid_lo, editionId]` —— 一个包就能列出
+  所有鼠标和各自的配色；
+* **遥测**打包成 `{PID, EID, VID, SN, SKU}`（`EID` 就是 editionId），用来统计配色分布。
+
+本项目的做法：读一次 `0x00/0x86` 存进 `DeviceState.edition`，`photo()` 据此选白色/黑色渲染图，
+并在型号名旁显示 `白色` / `黑色` 标签；换别的配色只需补一张素材 + 一个 `editionId` 分支。
+
+> **坑**：后台每 3 秒的局部刷新只带电量/DPI，它是从 `DeviceState::default()` 拼出来的，
+> `edition = 0` 会把读到的 `0x80` 覆盖回黑色。`merge()` 里必须显式保留 `new.edition = o.edition;`。
 
 ## 5. 构建与运行
 
