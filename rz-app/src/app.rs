@@ -54,6 +54,7 @@ impl App {
         backend.req(Req::Refresh);
         hook::install();
         tray::install(ctx.clone());
+        tray::hook_close();
         hook::configure(cfg.remap_enabled, cfg.remaps, backend.sender());
         let photo_black = photo::load(
             ctx,
