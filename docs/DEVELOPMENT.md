@@ -127,7 +127,8 @@ python tools/re/scan_all.py     # class 0x00..0x10 × id 0x80..0x8F 全扫，打
    - 素材放 `rz-app/assets/device_<型号>.png`（建议官方 500×500 顶视渲染）；
    - `has_photo_for(pid)` 里加 PID；
    - `HOTSPOTS` 是按整张图的归一化坐标定义的 5 个按键中心点，换图要重调；
-   - 配色用设备上报的 `editionId`（`0x00/0x86` 的 `args[1]`）选：`0x00` 黑、`0x80` 白。
+   - 配色用设备上报的 `editionId`（`0x00/0x86` 的 `args[1]`）选：`0x00` 黑、`0x80` 白；
+     新配色先 `rzctl raw 00 86 0000 2` 读出它的 `editionId`，再加一个分支和对应素材。
 3. **校准命令**：目前只对 DeathAdder V3 系列（`0x00B6~0x00B9`）验证过 `class 0x0B`，
    其他型号需要在 `supports_calibration()` 里显式放开，并自行验证 payload。
 
