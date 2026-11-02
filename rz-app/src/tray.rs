@@ -135,6 +135,8 @@ extern "system" {
     fn Shell_NotifyIconW(op: u32, data: *const NotifyIconDataW) -> i32;
     fn FindWindowW(class: *const u16, name: *const u16) -> isize;
     fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
+    fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
+    fn CallWindowProcW(prev: isize, hwnd: isize, msg: u32, w: usize, l: isize) -> isize;
     fn GetDpiForSystem() -> u32;
 }
 
@@ -143,7 +145,13 @@ extern "system" {
     fn GetModuleHandleW(name: *const u16) -> isize;
 }
 
+const GWLP_WNDPROC: i32 = -4;
+const WM_CLOSE: u32 = 0x0010;
+
 static CTX: OnceLock<egui::Context> = OnceLock::new();
+static CLOSE_HOOKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static ALLOW_CLOSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static ORIG_PROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 static TASKBAR_CREATED: OnceLock<u32> = OnceLock::new();
 
 fn wide(s: &str) -> Vec<u16> {
@@ -321,16 +329,54 @@ pub fn hide_main() {
     }
 }
 
-fn quit_app() {
+/// 子类化主窗口：把 WM_CLOSE（任务栏右键「关闭窗口」/ Alt+F4）改成「收进托盘」
+unsafe extern "system" fn close_hook(hwnd: isize, msg: u32, w: usize, l: isize) -> isize {
+    if msg == WM_CLOSE && !ALLOW_CLOSE.load(std::sync::atomic::Ordering::Relaxed) {
+        ShowWindow(hwnd, 0); // SW_HIDE
+        notify("RazerControl", "已最小化到托盘 · 右键托盘图标可退出");
+        return 0;
+    }
+    let prev = ORIG_PROC.load(std::sync::atomic::Ordering::Relaxed);
+    if prev == 0 {
+        return DefWindowProcW(hwnd, msg, w, l);
+    }
+    CallWindowProcW(prev, hwnd, msg, w, l)
+}
+
+/// 安装 WM_CLOSE 拦截（窗口创建后调用一次）
+pub fn hook_close() {
+    if CLOSE_HOOKED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let h = main_hwnd();
+    if h == 0 {
+        CLOSE_HOOKED.store(false, std::sync::atomic::Ordering::Relaxed);
+        return;
+    }
+    let prev = unsafe { SetWindowLongPtrW(h, GWLP_WNDPROC, close_hook as usize as isize) };
+    if prev != 0 {
+        ORIG_PROC.store(prev, std::sync::atomic::Ordering::Relaxed);
+    } else {
+        CLOSE_HOOKED.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+pub fn quit_app() {
+    ALLOW_CLOSE.store(true, std::sync::atomic::Ordering::Relaxed);
     let h = main_hwnd();
     if h != 0 {
         unsafe {
-            PostMessageW(h, 0x0010, 0, 0); // WM_CLOSE
+            PostMessageW(h, WM_CLOSE, 0, 0); // 走正常关闭流程（winit 结束事件循环）
         }
     }
     if let Some(ctx) = CTX.get() {
         ctx.request_repaint();
     }
+    // 兜底：2 秒内没退出就强制结束，避免托盘「退出」失效
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::process::exit(0);
+    });
 }
 
 // ---------------- 托盘 ----------------
