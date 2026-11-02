@@ -1,0 +1,10 @@
+[package]
+name = "rz-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+
+[lib]
+name = "rz_core"
+path = "src/lib.rs"

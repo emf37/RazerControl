@@ -1,0 +1,11 @@
+[package]
+name = "rz-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rz-core = { path = "../rz-core" }
+
+[[bin]]
+name = "rzctl"
+path = "src/main.rs"

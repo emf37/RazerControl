@@ -1,0 +1,14 @@
+[workspace]
+members = ["rz-core", "rz-cli", "rz-app"]
+resolver = "2"
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 1
+panic = "abort"

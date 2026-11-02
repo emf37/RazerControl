@@ -245,5 +245,5 @@ rzctl raw 04 86 00 1        # 任意命令探测：class id hex-args size
 
 代码 MIT（见 [LICENSE](LICENSE)）。
 
-`rz-app/assets/` 里的 Razer 图标与产品渲染图版权归 **Razer Inc.**，仅用于识别对应硬件型号，
+`rz-app/assets/` 里的 Razer 图标与产品渲染图版权归 **Razer Inc.**，仅用于识别对应硬件型号（详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)），
 **不在 MIT 授权范围内**；本项目与 Razer Inc. 无隶属关系。商业分发请自行替换素材。

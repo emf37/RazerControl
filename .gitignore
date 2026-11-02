@@ -1,0 +1,22 @@
+# 构建产物
+target/
+*.exe
+*.pdb
+*.o
+
+# 本地 cargo 镜像配置（按需自建，见 docs/DEVELOPMENT.md §6）
+.cargo/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 临时截图
+shot.png
+crop.png
+*.log
+
+# Python
+__pycache__/
+*.pyc
