@@ -131,7 +131,19 @@ razer-driver/
 
 ### 4.1 托盘与关闭行为
 
-与 Synapse 一致：**点关闭按钮不会退出**，而是把窗口藏进系统托盘，进程继续跑（键盘钩子、设备轮询都还在）。
+与 Synapse 一致：**只有托盘右键菜单里的「退出」才是真退出**，其余一切「关闭」动作都只是收进托盘。
+
+| 操作 | 行为 |
+| --- | --- |
+| 标题栏关闭按钮 | `ShowWindow(SW_HIDE)` → 托盘 |
+| **任务栏右键 → 关闭窗口** | 子类化窗口过程拦下 `WM_CLOSE` → 托盘 |
+| **Alt+F4** | 同上（也是 `WM_CLOSE`） |
+| 托盘右键 → 退出 | 置「允许关闭」标志后重发 `WM_CLOSE`，winit 结束事件循环 |
+
+实现要点（`tray.rs`）：用 `SetWindowLongPtrW(GWLP_WNDPROC)` 把主窗口过程替换成自己的 `close_hook`，
+`WM_CLOSE` 且未授权时直接 `SW_HIDE` 并返回 0（winit 完全收不到这条消息），其余消息原样转给
+`CallWindowProcW` 保存的原过程。退出时先置 `ALLOW_CLOSE`，再 `PostMessage(WM_CLOSE)`，
+另外挂一个 2 秒兜底的 `process::exit(0)`，保证托盘「退出」永远不会卡住。
 
 * 托盘图标：`Shell_NotifyIconW` + 隐藏消息窗口 + 自绘 `WndProc`（`tray.rs`，无第三方 crate）；
   图标是运行时用 32×32 BGRA 位图拼出的 ICO（`CreateIconFromResourceEx`），Razer 绿闪电。
