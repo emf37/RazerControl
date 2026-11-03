@@ -136,7 +136,10 @@ pub struct Device {
     pub caps: Caps,
 }
 
-const IO_TIMEOUT: Duration = Duration::from_millis(900);
+// Synapse 和本程序共用同一块 Feature Report 缓冲区，应答可能被对方的帧覆盖。
+// 用较短的超时 + 重发，比单次 900ms 干等更能适应这种竞争。
+const IO_TIMEOUT: Duration = Duration::from_millis(300);
+const IO_ATTEMPTS: usize = 3;
 const POLL_INTERVAL: Duration = Duration::from_micros(1200);
 
 impl Device {
@@ -169,41 +172,44 @@ impl Device {
         self.tid
     }
 
-    /// 发送一帧并等待设备应答（自动处理 busy 轮询与 stale 帧）。
+    /// 发送一帧并等待设备应答（自动处理 busy 轮询、stale 帧与丢帧重发）。
     pub fn xfer(&mut self, cmd: Cmd, args: &[u8], data_size: u8) -> Result<Reply> {
         let tid = self.next_tid();
         let frame = proto::build(tid, cmd.0, cmd.1, args, data_size);
-        if !self.hid.set_feature(&frame) {
-            return Err(DeviceError::Io);
-        }
-        let start = Instant::now();
-        let mut raw = [0u8; proto::REPORT_LEN];
-        loop {
-            if start.elapsed() > IO_TIMEOUT {
-                return Err(DeviceError::Timeout);
-            }
-            if !self.hid.get_feature(&mut raw) {
+        for _attempt in 0..IO_ATTEMPTS {
+            if !self.hid.set_feature(&frame) {
                 return Err(DeviceError::Io);
             }
-            let reply = Reply::parse(&raw);
-            if reply.tid != tid {
-                sleep(POLL_INTERVAL);
-                continue;
-            }
-            match reply.status {
-                proto::STATUS_BUSY => {
+            let start = Instant::now();
+            let mut raw = [0u8; proto::REPORT_LEN];
+            loop {
+                if start.elapsed() > IO_TIMEOUT {
+                    break;
+                }
+                if !self.hid.get_feature(&mut raw) {
+                    return Err(DeviceError::Io);
+                }
+                let reply = Reply::parse(&raw);
+                if reply.tid != tid {
                     sleep(POLL_INTERVAL);
                     continue;
                 }
-                proto::STATUS_NEW => {
-                    sleep(POLL_INTERVAL);
-                    continue;
+                match reply.status {
+                    proto::STATUS_BUSY => {
+                        sleep(POLL_INTERVAL);
+                        continue;
+                    }
+                    proto::STATUS_NEW => {
+                        sleep(POLL_INTERVAL);
+                        continue;
+                    }
+                    proto::STATUS_SUCCESS => return Ok(reply),
+                    proto::STATUS_NOT_SUPPORTED => return Err(DeviceError::Unsupported),
+                    s => return Err(DeviceError::Status(s)),
                 }
-                proto::STATUS_SUCCESS => return Ok(reply),
-                proto::STATUS_NOT_SUPPORTED => return Err(DeviceError::Unsupported),
-                s => return Err(DeviceError::Status(s)),
             }
         }
+        Err(DeviceError::Timeout)
     }
 
     fn query(&mut self, cmd: Cmd, size: u8) -> Result<Reply> {

@@ -84,6 +84,8 @@ fn worker(ctx: egui::Context, rx: Receiver<Req>, tx: Sender<Evt>, connected: Arc
     let mut last_try = Instant::now() - Duration::from_secs(10);
     let mut last_poll = Instant::now();
     let mut last_battery = Instant::now();
+    let mut last_profile_poll = Instant::now();
+    let mut last_dpi: Option<(u16, u16)> = None;
     let mut lost_reported = false;
     let mut was_asleep = false;
     let mut fails: u32 = 0;
@@ -141,21 +143,33 @@ fn worker(ctx: egui::Context, rx: Receiver<Req>, tx: Sender<Evt>, connected: Arc
             Err(RecvTimeoutError::Disconnected) => break,
         }
 
-        // 鼠标硬件 DPI 键会同时改变实时 DPI 和活动段，因此轮询必须带上阶梯表。
-        // 清醒时 1s 一次；休眠时降到 3s，避免每秒都等一次 900ms 超时。
+        // Synapse 能立即响应，是因为鼠标按下 DPI 键时会发送 hardwareEventReportID
+        // （report 5）主动事件；我们只读 Feature Report，只能把轮询压到 250ms。
+        // 阶梯表在 DPI 变化时或每 1s 读一次；单条命令失败不再直接判定休眠。
         let interval = if was_asleep {
             Duration::from_secs(3)
-        } else {
+        } else if fails > 0 {
             Duration::from_secs(1)
+        } else {
+            Duration::from_millis(250)
         };
         if dev.is_some() && last_poll.elapsed() > interval {
             last_poll = Instant::now();
             let mut need_reconnect = false;
             if let Some(d) = dev.as_mut() {
-                // 先花一次超时探活；不应答就不要再连着读电量和 DPI。
-                let alive = d.ping();
-                let dpi = if alive { d.dpi().ok() } else { None };
-                let profile = if alive { d.dpi_profile().ok() } else { None };
+                let dpi = d.dpi().ok();
+                let mut profile = None;
+                if dpi.is_some() {
+                    let changed = dpi != last_dpi;
+                    if changed || last_profile_poll.elapsed() > Duration::from_millis(1000) {
+                        profile = d.dpi_profile().ok();
+                        last_profile_poll = Instant::now();
+                    }
+                } else {
+                    // DPI 读失败时再用阶梯表做一次探活，避免单条命令超时误判休眠。
+                    profile = d.dpi_profile().ok();
+                }
+                let alive = dpi.is_some() || profile.is_some();
                 let bat = if alive && last_battery.elapsed() > Duration::from_secs(5) {
                     last_battery = Instant::now();
                     d.battery().ok()
@@ -163,16 +177,21 @@ fn worker(ctx: egui::Context, rx: Receiver<Req>, tx: Sender<Evt>, connected: Arc
                     None
                 };
                 if !alive {
-                    was_asleep = true;
                     fails += 1;
-                    let _ = tx.send(Evt::Sleeping(true));
-                    // 连续 3 次（约 9s）无应答：句柄可能已随休眠/重枚举失效，彻底重连
-                    need_reconnect = fails >= 3;
+                    // 一次超时可能只是 Synapse 抢占共享缓冲区；连续 2 次才显示休眠。
+                    if fails >= 2 && !was_asleep {
+                        was_asleep = true;
+                        let _ = tx.send(Evt::Sleeping(true));
+                    }
+                    // 连续多次失败才丢弃句柄，避免把偶发超时当成设备消失。
+                    need_reconnect = fails >= 5;
                 } else if was_asleep {
                     // 刚从休眠中醒来：重新探测能力（例如校准接口）
                     was_asleep = false;
                     fails = 0;
                     last_battery = Instant::now();
+                    last_profile_poll = Instant::now();
+                    last_dpi = dpi;
                     let _ = tx.send(Evt::Sleeping(false));
                     d.probe();
                     let _ = tx.send(Evt::State(Box::new(d.snapshot())));
@@ -182,6 +201,7 @@ fn worker(ctx: egui::Context, rx: Receiver<Req>, tx: Sender<Evt>, connected: Arc
                     let mut st = DeviceState::default();
                     if let Some(v) = dpi {
                         st.dpi = v;
+                        last_dpi = Some(v);
                     }
                     if let Some(p) = profile {
                         st.profile = p;
@@ -204,6 +224,7 @@ fn worker(ctx: egui::Context, rx: Receiver<Req>, tx: Sender<Evt>, connected: Arc
                 dev = None;
                 fails = 0;
                 was_asleep = false;
+                last_dpi = None;
                 last_try = Instant::now() - Duration::from_secs(10);
                 ctx.request_repaint();
             }
