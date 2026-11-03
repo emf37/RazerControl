@@ -11,6 +11,7 @@ python probe_edition.py   # 读 editionId / 硬件版本等标识
 python probe_wired.py     # 插线时枚举并逐个探测所有控制接口
 python probe_dav2pro.py   # DeathAdder V2 Pro：已知命令 + --scan 全类目扫描
 python probe_light.py     # V2 Pro Chroma getter 矩阵（--set 会实际写灯效）
+python ledgui.py          # Tkinter GUI：鼠标/底座、LED ID、亮度、颜色、效果、原始命令、闪灯定位
 python ledctl.py list     # 手动灯效测试：列出发光控制接口
 python ledctl.py read mouse 4    # 读鼠标 LED 0x04 亮度/效果
 python ledctl.py bright mouse 4 255
