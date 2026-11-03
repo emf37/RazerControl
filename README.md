@@ -245,6 +245,8 @@ rzctl raw 04 86 00 1        # 任意命令探测：class id hex-args size
   1000 Hz、电量 29%、休眠 300 s、低电阈值 5% 全部正确读回；LOGO 亮度 `0 → 40 → 0` 写入并回读一致，
   静态色 `#00FF00` 下发成功；
 * **Mouse Dock（007E）** 也暴露 91 字节控制接口，程序按 PID / 产品名跳过，不会被误选成鼠标；
+* **硬件 DPI 键切换活动段**：后台清醒时每 1 秒读一次 DPI + 阶梯表，界面在 1 秒内同步
+  实时 DPI 和活动段（实测用 `rzctl stage 3` 模拟，1.5 秒内界面显示段 3 / 1000 DPI）；
 * GUI 点击「激活」→ 设备活动段与实时 DPI 同步改变（3200 DPI，读到 3200）
 * 拖动段内滑杆 → 阶梯表真实写入（段 1 改为 13050 后读回 `[13050, 800, 3200, 6000, 10000]`）
 * 轮询率 125/250/500/1000 双向读写、休眠时间、低电阈值、电量与充电状态、序列号/固件
@@ -277,6 +279,10 @@ rzctl raw 04 86 00 1        # 任意命令探测：class id hex-args size
   不支持硬件级按键重映射；这与 Synapse 的做法一致（其 asar 内同样有 `mapping_engine`）。
 * **灯效**：DeathAdder V3 Pro 无 RGB 灯区（`0x0F/*` 返回 `0x05`）；DeathAdder V2 Pro 有单个 LOGO 灯区，
   已按 `0x0F/0x84` + `0x0F/0x04`（亮度）和 `0x0F/0x02`（静态色）实现。
+* **V2 Pro 灯区编号**：鼠标 LOGO 是 LED `0x04`，Mouse Dock 是 LED `0x05`，两者是独立灯区。
+  程序只打开鼠标 PID `007D/007C`；若调鼠标灯效时仍看到底座变化，可用
+  `python tools/re/ledctl.py bright mouse 4 255` / `python tools/re/ledctl.py bright dock 5 255`
+  手动确认实际映射（`ledctl.py` 还支持 `read` / `off` / `color`）。
 * **校准**：V2 Pro 的 `0x0B` 校准接口未验证，界面保持禁用；只有 DeathAdder V3 系列实测可用。
 * 与 Synapse 同时运行通常无冲突（各自轮询、按 tid 过滤应答），但两者会争抢同一 Feature Report 缓冲区，
   高频刷新时可能出现个别超时，重试即可。

@@ -139,6 +139,51 @@ impl App {
                     self.state = Some(st);
                     self.connected = true;
                 }
+                Evt::Quick(st) => {
+                    // 轻量轮询只更新这些字段；其它信息（固件/序列号/亮度/配色/校准值）
+                    // 来自完整快照，不能被 1s 轮询清空。
+                    let st = *st;
+                    if let Some(cur) = self.state.as_mut() {
+                        if st.dpi != (0, 0) {
+                            cur.dpi = st.dpi;
+                        }
+                        if !st.profile.stages.is_empty() {
+                            cur.profile = st.profile;
+                        }
+                        if st.battery.present {
+                            cur.battery = st.battery;
+                        }
+                        if cur.name.is_empty() {
+                            cur.name = st.name;
+                        }
+                        if cur.pid == 0 {
+                            cur.pid = st.pid;
+                        }
+                        if st.wireless {
+                            cur.wireless = true;
+                        }
+                        if st.max_dpi != 0 {
+                            cur.max_dpi = st.max_dpi;
+                        }
+                        if st.max_poll != 0 {
+                            cur.max_poll = st.max_poll;
+                        }
+                        if st.has_rgb {
+                            cur.has_rgb = true;
+                        }
+                        cur.caps = st.caps;
+                        if self.dpi_draft.len() != cur.profile.stages.len() {
+                            self.dpi_draft =
+                                cur.profile.stages.iter().map(|s| s.x as f32).collect();
+                        }
+                    } else {
+                        self.dpi_draft =
+                            st.profile.stages.iter().map(|s| s.x as f32).collect();
+                        self.state = Some(st);
+                    }
+                    self.connected = true;
+                    self.asleep = false;
+                }
                 Evt::Toast(msg, ok) => self.toast(msg, ok, now),
                 Evt::Sleeping(v) => {
                     if v && !self.asleep {

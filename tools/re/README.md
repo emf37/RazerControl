@@ -11,6 +11,12 @@ python probe_edition.py   # 读 editionId / 硬件版本等标识
 python probe_wired.py     # 插线时枚举并逐个探测所有控制接口
 python probe_dav2pro.py   # DeathAdder V2 Pro：已知命令 + --scan 全类目扫描
 python probe_light.py     # V2 Pro Chroma getter 矩阵（--set 会实际写灯效）
+python ledctl.py list     # 手动灯效测试：列出发光控制接口
+python ledctl.py read mouse 4    # 读鼠标 LED 0x04 亮度/效果
+python ledctl.py bright mouse 4 255
+python ledctl.py off mouse 4
+python ledctl.py read dock 5     # 读 Mouse Dock LED 0x05
+python ledctl.py bright dock 5 255
 python image_bbox.py rz-app/assets/device_dav2pro.png   # 产品图 bbox，用于调 CROP
 python mark_hotspots.py <原图> <输出图>                 # 画出 CROP/5 个热点，做视觉校准
 ```

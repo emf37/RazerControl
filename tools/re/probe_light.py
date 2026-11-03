@@ -10,10 +10,18 @@ import rzclient as Z
 PIDS = (0x007C, 0x007D)
 
 
+def wanted_pids():
+    for arg in sys.argv[1:]:
+        if arg.startswith('--pid='):
+            return (int(arg.split('=', 1)[1], 16),)
+    return PIDS
+
+
 def find_mouse():
+    pids = wanted_pids()
     for p in R.enumerate_hid():
         i = R.info(p)
-        if i and i['vid'] == 0x1532 and i['pid'] in PIDS and i['feature'] == 91:
+        if i and i['vid'] == 0x1532 and i['pid'] in pids and i['feature'] == 91:
             return p
     return None
 

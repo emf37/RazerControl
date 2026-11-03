@@ -31,7 +31,10 @@ pub enum Req {
 
 #[derive(Debug)]
 pub enum Evt {
+    /// 完整快照（连接 / 唤醒 / 用户操作后）
     State(Box<DeviceState>),
+    /// 轻量轮询：只带 DPI、活动段和（可选的）电量，UI 合并时不覆盖其它字段
+    Quick(Box<DeviceState>),
     Toast(String, bool),
     Lost(String),
     /// 设备在但无应答（无线休眠 / 被占用）
@@ -80,6 +83,7 @@ fn worker(ctx: egui::Context, rx: Receiver<Req>, tx: Sender<Evt>, connected: Arc
     let mut dev: Option<Device> = None;
     let mut last_try = Instant::now() - Duration::from_secs(10);
     let mut last_poll = Instant::now();
+    let mut last_battery = Instant::now();
     let mut lost_reported = false;
     let mut was_asleep = false;
     let mut fails: u32 = 0;
@@ -137,23 +141,38 @@ fn worker(ctx: egui::Context, rx: Receiver<Req>, tx: Sender<Evt>, connected: Arc
             Err(RecvTimeoutError::Disconnected) => break,
         }
 
-        if dev.is_some() && last_poll.elapsed() > Duration::from_secs(3) {
+        // 鼠标硬件 DPI 键会同时改变实时 DPI 和活动段，因此轮询必须带上阶梯表。
+        // 清醒时 1s 一次；休眠时降到 3s，避免每秒都等一次 900ms 超时。
+        let interval = if was_asleep {
+            Duration::from_secs(3)
+        } else {
+            Duration::from_secs(1)
+        };
+        if dev.is_some() && last_poll.elapsed() > interval {
             last_poll = Instant::now();
             let mut need_reconnect = false;
             if let Some(d) = dev.as_mut() {
-                // 先花一次超时探活；不应答就不要再连着读电量/DPI（省两次超时，唤醒恢复更快）
+                // 先花一次超时探活；不应答就不要再连着读电量和 DPI。
                 let alive = d.ping();
-                let bat = if alive { d.battery().ok() } else { None };
                 let dpi = if alive { d.dpi().ok() } else { None };
-                if !alive || (bat.is_none() && dpi.is_none()) {
+                let profile = if alive { d.dpi_profile().ok() } else { None };
+                let bat = if alive && last_battery.elapsed() > Duration::from_secs(5) {
+                    last_battery = Instant::now();
+                    d.battery().ok()
+                } else {
+                    None
+                };
+                if !alive {
                     was_asleep = true;
                     fails += 1;
                     let _ = tx.send(Evt::Sleeping(true));
                     // 连续 3 次（约 9s）无应答：句柄可能已随休眠/重枚举失效，彻底重连
                     need_reconnect = fails >= 3;
                 } else if was_asleep {
-                    // 刚从休眠中醒来：重新探测能力（例如校準接口）
+                    // 刚从休眠中醒来：重新探测能力（例如校准接口）
                     was_asleep = false;
+                    fails = 0;
+                    last_battery = Instant::now();
                     let _ = tx.send(Evt::Sleeping(false));
                     d.probe();
                     let _ = tx.send(Evt::State(Box::new(d.snapshot())));
@@ -161,19 +180,23 @@ fn worker(ctx: egui::Context, rx: Receiver<Req>, tx: Sender<Evt>, connected: Arc
                     fails = 0;
                     let _ = tx.send(Evt::Sleeping(false));
                     let mut st = DeviceState::default();
-                    if let Some(b) = bat {
-                        st.battery = b;
-                    }
                     if let Some(v) = dpi {
                         st.dpi = v;
                     }
+                    if let Some(p) = profile {
+                        st.profile = p;
+                    }
+                    if let Some(b) = bat {
+                        st.battery = b;
+                    }
                     st.name = d.product_name().to_string();
                     st.pid = d.info.product_id;
+                    st.wireless = d.caps.wireless || d.spec.wireless;
                     st.max_dpi = d.spec.max_dpi;
                     st.max_poll = d.spec.max_poll;
                     st.has_rgb = d.spec.has_rgb;
                     st.caps = d.caps;
-                    let _ = tx.send(Evt::State(Box::new(st)));
+                    let _ = tx.send(Evt::Quick(Box::new(st)));
                 }
                 ctx.request_repaint();
             }
