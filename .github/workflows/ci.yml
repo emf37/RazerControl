@@ -1,0 +1,35 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check workspace
+        run: cargo check --workspace --all-targets
+
+      - name: Build release binaries
+        run: cargo build --release -p rz-cli -p rz-app
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: RazerControl-windows
+          path: |
+            target/release/RazerControl.exe
+            target/release/rzctl.exe
+          if-no-files-found: error

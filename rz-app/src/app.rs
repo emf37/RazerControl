@@ -28,8 +28,10 @@ pub struct App {
     pub ty: Type,
     pub backend: Backend,
     pub state: Option<DeviceState>,
-    pub photo_black: Option<photo::Photo>,
-    pub photo_white: Option<photo::Photo>,
+    pub photo_dav3_black: Option<photo::Photo>,
+    pub photo_dav3_white: Option<photo::Photo>,
+    pub photo_dav2_black: Option<photo::Photo>,
+    pub photo_dav2_white: Option<photo::Photo>,
     pub cfg: Config,
     pub page: usize,
     toasts: Vec<Toast>,
@@ -56,23 +58,43 @@ impl App {
         tray::install(ctx.clone());
         tray::hook_close();
         hook::configure(cfg.remap_enabled, cfg.remaps, backend.sender());
-        let photo_black = photo::load(
+        let photo_dav3_black = photo::load(
             ctx,
             include_bytes!("../assets/device_dav3pro.png"),
             "device_dav3pro_black",
+            photo::CROP_DAV3PRO,
+            photo::HOTSPOTS_DAV3PRO,
         );
-        let photo_white = photo::load(
+        let photo_dav3_white = photo::load(
             ctx,
             include_bytes!("../assets/device_dav3pro_white.png"),
             "device_dav3pro_white",
+            photo::CROP_DAV3PRO,
+            photo::HOTSPOTS_DAV3PRO,
+        );
+        let photo_dav2_black = photo::load(
+            ctx,
+            include_bytes!("../assets/device_dav2pro.png"),
+            "device_dav2pro_black",
+            photo::CROP_DAV2PRO,
+            photo::HOTSPOTS_DAV2PRO,
+        );
+        let photo_dav2_white = photo::load(
+            ctx,
+            include_bytes!("../assets/device_dav2pro_white.png"),
+            "device_dav2pro_white",
+            photo::CROP_DAV2PRO,
+            photo::HOTSPOTS_DAV2PRO,
         );
         App {
             ty,
             backend,
             state: cache::load(),
-            photo_black,
-            photo_white,
-            page: cfg.last_page.min(5),
+            photo_dav3_black,
+            photo_dav3_white,
+            photo_dav2_black,
+            photo_dav2_white,
+            page: cfg.last_page.min(6),
             toasts: Vec::new(),
             connected: false,
             asleep: false,
@@ -111,6 +133,9 @@ impl App {
                     if self.dpi_draft.len() != st.profile.stages.len() {
                         self.dpi_draft = st.profile.stages.iter().map(|s| s.x as f32).collect();
                     }
+                    if let Some(b) = st.brightness {
+                        self.brightness = b as f32;
+                    }
                     self.state = Some(st);
                     self.connected = true;
                 }
@@ -140,17 +165,18 @@ impl App {
         let _ = ctx;
     }
 
-    /// 当前配色对应的官方产品图（editionId 0x80 = 白色）
+    /// 当前型号 + 配色对应的官方产品图（editionId 0x80 = 白色）
     pub fn photo(&self) -> Option<&photo::Photo> {
-        let white = self
-            .state
-            .as_ref()
-            .map(|s| s.edition == 0x80)
-            .unwrap_or(false);
+        let st = self.state.as_ref()?;
+        let white = st.edition == 0x80;
+        let (black, white_photo) = match st.pid {
+            0x007C | 0x007D => (&self.photo_dav2_black, &self.photo_dav2_white),
+            _ => (&self.photo_dav3_black, &self.photo_dav3_white),
+        };
         if white {
-            self.photo_white.as_ref().or(self.photo_black.as_ref())
+            white_photo.as_ref().or(black.as_ref())
         } else {
-            self.photo_black.as_ref().or(self.photo_white.as_ref())
+            black.as_ref().or(white_photo.as_ref())
         }
     }
 
@@ -516,6 +542,7 @@ fn merge(old: Option<&DeviceState>, mut new: DeviceState) -> DeviceState {
             new.max_dpi = o.max_dpi;
             new.max_poll = o.max_poll;
             new.has_rgb = o.has_rgb;
+            new.brightness = new.brightness.or(o.brightness);
             new.edition = o.edition;
             new.caps = o.caps;
             new.wireless = o.wireless;

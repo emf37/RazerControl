@@ -1,6 +1,6 @@
 //! 设备后台工作线程：所有 HID I/O 都在这里，UI 线程永不阻塞。
 
-use rz_core::{Cmd, Device, DeviceState, DpiStage, HidInfo};
+use rz_core::{Cmd, Device, DeviceState, DpiStage};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -71,29 +71,9 @@ impl Backend {
     }
 }
 
-/// 选出可用的控制设备：优先能应答的，其次有线型号（插线时会出现两个接口）
+/// 选出可用的鼠标：跳过 Mouse Dock 等配件，优先有线型号。
 fn pick_device() -> Option<Device> {
-    let mut infos: Vec<HidInfo> = rz_core::enumerate_razer()
-        .into_iter()
-        .filter(|i| i.is_control_interface())
-        .collect();
-    infos.sort_by_key(|i| match i.product_id {
-        0x00B6 | 0x00B8 => 0,
-        _ => 1,
-    });
-    let mut fallback: Option<Device> = None;
-    for info in infos {
-        if let Ok(d) = Device::open(&info) {
-            let responsive = d.caps.dpi || d.caps.poll_rate || d.caps.battery;
-            if responsive {
-                return Some(d);
-            }
-            if fallback.is_none() {
-                fallback = Some(d);
-            }
-        }
-    }
-    fallback
+    rz_core::pick_device()
 }
 
 fn worker(ctx: egui::Context, rx: Receiver<Req>, tx: Sender<Evt>, connected: Arc<AtomicBool>) {

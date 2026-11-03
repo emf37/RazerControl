@@ -123,13 +123,20 @@ python tools/re/scan_all.py     # class 0x00..0x10 × id 0x80..0x8F 全扫，打
 
 1. **能力表** `rz-core/src/devices.rs`：填 `(型号名, 最大DPI, 最大轮询, 有灯?, 有电池?, 无线?)`。
    最大 DPI / 轮询率无法从设备读出来，只能按型号写死。
+   同时维护 `is_accessory()` / `selection_priority()`：像 DeathAdder V2 Pro 的 Mouse Dock（`0x007E`）
+   也会暴露 91 字节控制接口，必须跳过，不能把底座当成鼠标。
 2. **产品图** `rz-app/src/photo.rs`：
-   - 素材放 `rz-app/assets/device_<型号>.png`（建议官方 500×500 顶视渲染）；
+   - 素材放 `rz-app/assets/device_<型号>.png`（建议官方顶视渲染）；
    - `has_photo_for(pid)` 里加 PID；
-   - `HOTSPOTS` 是按整张图的归一化坐标定义的 5 个按键中心点，换图要重调；
+   - `CROP_DAV3PRO` / `CROP_DAV2PRO` 与对应的 `HOTSPOTS_*` 是整张图的归一化裁剪框和
+     5 个按键中心点，换图要单独调；
    - 配色用设备上报的 `editionId`（`0x00/0x86` 的 `args[1]`）选：`0x00` 黑、`0x80` 白；
      新配色先 `rzctl raw 00 86 0000 2` 读出它的 `editionId`，再加一个分支和对应素材。
-3. **校准命令**：目前只对 DeathAdder V3 系列（`0x00B6~0x00B9`）验证过 `class 0x0B`，
+3. **灯效协议**：V2 Pro 走「单 LOGO LED + 扩展亮度」：
+   亮度 `0x0F/0x84` 读、`0x0F/0x04` 写，args `[0x01, 0x04, value]`；
+   静态色 `0x0F/0x02`，args `[0x01, 0x04, 0x01, 0x00, 0x00, 0x01, R, G, B]`。
+   新设备先用 `rzctl raw 0F 84 0104 3` 验证，再决定是否复用 `uses_logo_lighting()`。
+4. **校准命令**：目前只对 DeathAdder V3 系列（`0x00B6~0x00B9`）验证过 `class 0x0B`，
    其他型号需要在 `supports_calibration()` 里显式放开，并自行验证 payload。
 
 ## 5. 踩过的坑（照这个顺序排查，能省一天）
