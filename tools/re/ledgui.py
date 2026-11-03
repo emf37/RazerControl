@@ -143,7 +143,7 @@ class LedLab(tk.Tk):
                   style='Muted.TLabel').grid(row=row, column=2, columnspan=3,
                                              sticky='w')
         row += 1
-        self.bright_var = tk.IntVar(value=0)
+        self.bright_var = tk.DoubleVar(value=0.0)
         self.bright_scale = ttk.Scale(
             bright, from_=0, to=255, variable=self.bright_var,
             command=lambda _v: self.bright_value.configure(
